@@ -1,5 +1,50 @@
 # Pipe 游戏技术实现文档
 
+- [Pipe 游戏技术实现文档](#pipe-游戏技术实现文档)
+  - [1. 技术架构概述](#1-技术架构概述)
+    - [1.1 引擎与渲染](#11-引擎与渲染)
+    - [1.2 核心架构模式](#12-核心架构模式)
+    - [1.3 性能优化技术](#13-性能优化技术)
+    - [1.4 项目结构](#14-项目结构)
+  - [2. 核心技术实现](#2-核心技术实现)
+    - [2.1 程序化管道生成系统](#21-程序化管道生成系统)
+      - [2.1.1 管道网格生成 (PipeMeshJob.cs)](#211-管道网格生成-pipemeshjobcs)
+      - [2.1.3 音频系统集成](#213-音频系统集成)
+      - [2.1.2 管道配置系统](#212-管道配置系统)
+    - [2.2 管道系统架构 (PipeSystem.cs)](#22-管道系统架构-pipesystemcs)
+      - [2.2.1 对象池模式](#221-对象池模式)
+      - [2.2.2 管道对齐算法](#222-管道对齐算法)
+    - [2.3 玩家控制系统](#23-玩家控制系统)
+      - [2.3.1 输入处理 (PipeUserInput.cs)](#231-输入处理-pipeuserinputcs)
+      - [2.3.2 物理运动系统 (Player.cs)](#232-物理运动系统-playercs)
+    - [2.4 道具生成系统](#24-道具生成系统)
+      - [2.4.1 生成器模式 (PipeItemGenerator.cs)](#241-生成器模式-pipeitemgeneratorcs)
+      - [2.4.2 可放置接口 (IPlaceable.cs)](#242-可放置接口-iplaceablecs)
+    - [2.5 UI系统架构](#25-ui系统架构)
+      - [2.5.1 最佳分数UI (BestScoreUI.cs)](#251-最佳分数ui-bestscoreuics)
+      - [2.5.2 距离显示UI (DistanceUI.cs)](#252-距离显示ui-distanceuics)
+    - [2.6 碰撞检测与粒子系统](#26-碰撞检测与粒子系统)
+      - [2.6.1 Avatar碰撞处理 (Avatar.cs)](#261-avatar碰撞处理-avatarcs)
+    - [2.7 数据持久化系统 (UserRepository.cs)](#27-数据持久化系统-userrepositorycs)
+  - [3. 性能优化技术](#3-性能优化技术)
+    - [3.1 渲染优化](#31-渲染优化)
+    - [3.2 内存管理](#32-内存管理)
+    - [3.3 计算优化](#33-计算优化)
+  - [4. 平台适配技术](#4-平台适配技术)
+    - [4.1 移动平台优化](#41-移动平台优化)
+    - [4.2 WebGL适配](#42-webgl适配)
+  - [5. 开发工具与调试](#5-开发工具与调试)
+    - [5.1 编辑器扩展](#51-编辑器扩展)
+    - [5.2 调试功能](#52-调试功能)
+  - [6. 代码架构设计](#6-代码架构设计)
+    - [6.1 命名空间组织](#61-命名空间组织)
+    - [6.2 依赖管理](#62-依赖管理)
+  - [7. 扩展性设计](#7-扩展性设计)
+    - [7.1 新功能扩展点](#71-新功能扩展点)
+    - [7.2 配置系统](#72-配置系统)
+
+
+
 ## 1. 技术架构概述
 
 ### 1.1 引擎与渲染
@@ -251,9 +296,9 @@ public class PipeItem : MonoBehaviour, IPlaceable {
 - **接口隔离**: IPlaceable接口确保组件的可放置性
 - **运行时切换**: 支持动态更换生成算法
 
-### 2.7 UI系统架构
+### 2.5 UI系统架构
 
-#### 2.7.1 最佳分数UI (BestScoreUI.cs)
+#### 2.5.1 最佳分数UI (BestScoreUI.cs)
 ```csharp
 public class BestScoreUI : MonoBehaviour {
     [SerializeField] private GameObject bestRoot;
@@ -271,7 +316,7 @@ public class BestScoreUI : MonoBehaviour {
 }
 ```
 
-#### 2.7.2 距离显示UI (DistanceUI.cs)
+#### 2.5.2 距离显示UI (DistanceUI.cs)
 ```csharp
 public class DistanceUI : MonoBehaviour {
     [SerializeField] private TextMeshProUGUI distanceText;
@@ -293,40 +338,6 @@ public class DistanceUI : MonoBehaviour {
 - **TextMeshPro**: 使用高质量文本渲染
 - **条件显示**: 根据数据状态控制UI元素显示
 
-### 2.5 渲染系统优化
-
-#### 2.5.1 边缘检测渲染特性 (EdgeDetect.cs)
-```csharp
-public class EdgeDetect : ScriptableRendererFeature {
-    class EdgeDetectRenderPass : ScriptableRenderPass {
-        private RenderTargetIdentifier source;
-        private RenderTargetHandle destination;
-        protected Material outlineMaterial;
-        
-        public override void Execute(ScriptableRenderContext context, 
-            ref RenderingData renderingData) {
-            CommandBuffer cmd = CommandBufferPool.Get("_EdgeDetectRenderPass");
-            
-            if(destination == RenderTargetHandle.CameraTarget) {
-                cmd.GetTemporaryRT(temporaryColorTexture.id, opaqueDescriptor, 
-                    FilterMode.Point);
-                Blit(cmd, source, temporaryColorTexture.Identifier(), 
-                    outlineMaterial, 0);
-                Blit(cmd, temporaryColorTexture.Identifier(), source);
-            }
-            
-            context.ExecuteCommandBuffer(cmd);
-            CommandBufferPool.Release(cmd);
-        }
-    }
-}
-```
-
-**渲染技术特性**:
-- **URP渲染特性**: 基于ScriptableRendererFeature的自定义渲染
-- **后处理效果**: 在透明物体渲染后执行边缘检测
-- **临时纹理**: 使用临时渲染纹理进行多通道处理
-- **命令缓冲**: 使用CommandBuffer进行GPU指令管理
 
 ### 2.6 碰撞检测与粒子系统
 
@@ -351,7 +362,7 @@ private void OnTriggerEnter(Collider other) {
 - **状态管理**: 基于时间的死亡状态控制
 - **视觉反馈**: 粒子爆炸效果与音效同步
 
-### 2.8 数据持久化系统 (UserRepository.cs)
+### 2.7 数据持久化系统 (UserRepository.cs)
 ```csharp
 public class UserRepository {
     public static UserRepository Instance = new UserRepository();
@@ -463,13 +474,3 @@ namespace xb.input {
 - **ScriptableObject**: 用于游戏配置数据
 - **预制体系统**: 模块化的游戏对象组装
 - **材质系统**: 支持不同视觉主题
-
-## 8. 技术债务与改进方向
-
-### 8.1 已实现的核心技术
-- **高性能管道生成**: Unity Job System并行网格生成
-- **音频系统**: 渐变音效和独立音源管理
-- **数据持久化**: PlayerPrefs本地存储和事件通知
-- **渲染优化**: URP + 边缘检测渲染特性
-- **UI系统**: 事件驱动的响应式UI更新
-- **障碍物生成**: 基于策略模式的可扩展生成器

@@ -3,7 +3,5 @@
 
 Galactic Glide: 银河滑翔
 
-alias:
-galactic
-
-pass:
+alias: test
+pass: helloworld123

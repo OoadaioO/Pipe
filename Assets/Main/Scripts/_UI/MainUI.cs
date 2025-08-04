@@ -12,6 +12,9 @@ public class MainUI : MonoBehaviour {
     [SerializeField]
     private Button newGameButton;
 
+    [SerializeField]
+    private AudioManager audioManager;
+
     private void Awake() {
 
 
@@ -34,6 +37,8 @@ public class MainUI : MonoBehaviour {
 
     private void Player_OnDie() {
         Show();
+        audioManager.FadeOut();
+        audioManager.PlayGameOverOneShot();
     }
 
     private void Show() {
@@ -47,5 +52,6 @@ public class MainUI : MonoBehaviour {
     private void NewGame() {
         Player.Instance.StartGame(0);
         Hide();
+        audioManager.FadeIn();
     }
 }

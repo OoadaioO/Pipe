@@ -7,12 +7,42 @@
 - **渲染管线**: Universal Render Pipeline (URP)
 - **图形API**: 支持多平台图形API (DirectX, OpenGL, Metal, Vulkan)
 - **目标平台**: PC (Windows/Mac/Linux), Mobile (iOS/Android), WebGL
+- **渲染特性**: Toon Shader、边缘检测、轮廓渲染
+- **音频系统**: 3D空间音效、动态音乐系统
 
 ### 1.2 核心架构模式
 - **单例模式**: 核心系统使用SingletonMonobehaviour模式
 - **组件化设计**: 基于Unity组件系统的模块化架构
 - **事件驱动**: 使用C# Action进行系统间通信
 - **接口抽象**: 使用接口实现可扩展的组件系统
+- **策略模式**: 障碍物生成器使用抽象基类和具体实现
+
+### 1.3 性能优化技术
+- **Unity Job System**: 多线程并行网格生成
+- **对象池模式**: 管道段和道具的重用机制
+- **NativeArray**: 避免托管内存分配和GC压力
+- **实时网格生成**: 基于数学公式的动态几何创建
+
+### 1.4 项目结构
+```
+Assets/
+├── Main/
+│   ├── Scripts/
+│   │   ├── _Audio/         # 音频管理系统
+│   │   ├── _Pipe/          # 管道系统
+│   │   │   └── _generator/ # 障碍物生成器
+│   │   ├── _Player/        # 玩家系统
+│   │   ├── _Render/        # 渲染系统
+│   │   └── _UI/            # UI系统
+│   ├── Scenes/             # 游戏场景
+│   ├── Shaders/            # 自定义着色器
+│   ├── Prefabs/            # 预制体资源
+│   ├── Models/             # 3D模型资源
+│   ├── Materials/          # 材质资源
+│   ├── Textures/           # 纹理资源
+│   └── Audio/              # 音频资源
+└── URP/                    # URP渲染管线配置
+```
 
 ## 2. 核心技术实现
 
@@ -20,20 +50,57 @@
 
 #### 2.1.1 管道网格生成 (PipeMeshJob.cs)
 ```csharp
-// 核心技术：Unity Job System + Burst编译器
-public struct PipeMeshJob : IJob {
-    // 使用NativeArray进行高性能数据处理
-    [NativeDisableContainerSafetyRestriction]
-    public NativeArray<float3> vertices;
-    // 多线程安全的网格生成
+// 核心技术：Unity Job System
+public struct PipeMeshJob : IJobFor {
+    MeshStream streams;
+    PipeQuadGenerator generator;
+    
+    public void Execute(int index) {
+        generator.Execute(index, streams);
+    }
+    
+    public static JobHandle SchedualParallel(PipeConfig config, Mesh mesh, 
+        Mesh.MeshData meshData, JobHandle dependency) {
+        // 并行调度网格生成任务
+        return job.ScheduleParallel(job.generator.QuadCount, 1, dependency);
+    }
 }
 ```
 
 **技术要点**:
-- **Unity Job System**: 多线程并行计算网格顶点
-- **Burst编译器**: 高性能数学运算优化
+- **Unity Job System**: 使用IJobFor进行并行网格生成
 - **NativeArray**: 非托管内存数组，避免GC分配
-- **数学库**: Unity.Mathematics进行SIMD优化的向量运算
+- **数学库**: Unity.Mathematics进行向量运算
+- **实时网格生成**: 动态创建和管理MeshData
+- **环面几何**: 基于环面(Torus)数学公式生成管道网格
+
+#### 2.1.3 音频系统集成
+```csharp
+public class AudioManager : MonoBehaviour {
+    [Header("music settings")]
+    [SerializeField] private AudioSource audioSource;
+    [SerializeField] private float fadeInDuration = 1f;
+    [SerializeField] private float fadeOutDuration = 1f;
+    
+    [Header("SFX Settings")]
+    [SerializeField] private AudioSource sfxSource;
+    [SerializeField] private AudioClip gameOverClip;
+    
+    public void FadeIn() {
+        StartCoroutine(FadeInCoroutine());
+    }
+    
+    public void PlayGameOverOneShot() {
+        sfxSource.PlayOneShot(gameOverClip);
+    }
+}
+```
+
+**音频技术特性**:
+- **渐变音效**: 使用协程实现音乐淡入淡出效果
+- **独立音源**: 音乐和音效使用分离的AudioSource
+- **一次性播放**: 使用PlayOneShot播放游戏结束音效
+- **协程控制**: 基于协程的音量渐变系统
 
 #### 2.1.2 管道配置系统
 ```csharp
@@ -144,6 +211,19 @@ public class RandomPlacer : PipeItemGenerator {
         item.Position(pipe, i * angleStep, pipeRotation);
     }
 }
+
+// 螺旋模式生成器
+public class SpiralPlacer : PipeItemGenerator {
+    [SerializeField] private float spiralOffset = 30f;
+    
+    public override void GenerateItems(Pipe pipe) {
+        for (int i = 0; i < itemCount; i++) {
+            float curveRotation = i * angleStep;
+            float ringRotation = (i * spiralOffset) % 360f;
+            item.Position(pipe, curveRotation, ringRotation);
+        }
+    }
+}
 ```
 
 #### 2.4.2 可放置接口 (IPlaceable.cs)
@@ -151,16 +231,106 @@ public class RandomPlacer : PipeItemGenerator {
 public interface IPlaceable {
     public void Position(Pipe pipe, float curveRotation, float ringRotation);
 }
+
+public class PipeItem : MonoBehaviour, IPlaceable {
+    public void Position(Pipe pipe, float curveRotation, float ringRotation) {
+        // 基于管道坐标系的精确定位
+        transform.SetParent(pipe.transform, false);
+        transform.localPosition = Vector3.zero;
+        transform.localRotation = Quaternion.Euler(0f, 0f, -curveRotation);
+        transform.Translate(0f, pipe.curveRadius, 0f);
+        transform.Rotate(ringRotation, 0f, 0f);
+        transform.Translate(0f, pipe.pipeRadius, 0f);
+    }
+}
 ```
 
 **设计模式优势**:
 - **策略模式**: 不同的生成策略可以轻松切换
 - **开闭原则**: 新的生成器类型无需修改现有代码
 - **接口隔离**: IPlaceable接口确保组件的可放置性
+- **运行时切换**: 支持动态更换生成算法
 
-### 2.5 碰撞检测与粒子系统
+### 2.7 UI系统架构
 
-#### 2.5.1 Avatar碰撞处理 (Avatar.cs)
+#### 2.7.1 最佳分数UI (BestScoreUI.cs)
+```csharp
+public class BestScoreUI : MonoBehaviour {
+    [SerializeField] private GameObject bestRoot;
+    [SerializeField] private TextMeshProUGUI bestText;
+    
+    private void Awake() {
+        SetBestText(UserRepository.Instance.BestScore);
+        UserRepository.OnBestScoreChanged += SetBestText;
+    }
+    
+    public void SetBestText(int bestScore) {
+        bestRoot.SetActive(bestScore > 0);
+        bestText.text = $"{bestScore}M";
+    }
+}
+```
+
+#### 2.7.2 距离显示UI (DistanceUI.cs)
+```csharp
+public class DistanceUI : MonoBehaviour {
+    [SerializeField] private TextMeshProUGUI distanceText;
+    
+    private void Awake() {
+        Player.OnDistanceTraveledChange += UpdateDistanceText;
+        UpdateDistanceText(0);
+    }
+    
+    private void UpdateDistanceText(float distance) {
+        distanceText.text = $"{(int)distance}m";
+    }
+}
+```
+
+**UI系统特性**:
+- **事件驱动**: 基于C# Action的数据绑定
+- **自动更新**: 数据变化时UI自动刷新
+- **TextMeshPro**: 使用高质量文本渲染
+- **条件显示**: 根据数据状态控制UI元素显示
+
+### 2.5 渲染系统优化
+
+#### 2.5.1 边缘检测渲染特性 (EdgeDetect.cs)
+```csharp
+public class EdgeDetect : ScriptableRendererFeature {
+    class EdgeDetectRenderPass : ScriptableRenderPass {
+        private RenderTargetIdentifier source;
+        private RenderTargetHandle destination;
+        protected Material outlineMaterial;
+        
+        public override void Execute(ScriptableRenderContext context, 
+            ref RenderingData renderingData) {
+            CommandBuffer cmd = CommandBufferPool.Get("_EdgeDetectRenderPass");
+            
+            if(destination == RenderTargetHandle.CameraTarget) {
+                cmd.GetTemporaryRT(temporaryColorTexture.id, opaqueDescriptor, 
+                    FilterMode.Point);
+                Blit(cmd, source, temporaryColorTexture.Identifier(), 
+                    outlineMaterial, 0);
+                Blit(cmd, temporaryColorTexture.Identifier(), source);
+            }
+            
+            context.ExecuteCommandBuffer(cmd);
+            CommandBufferPool.Release(cmd);
+        }
+    }
+}
+```
+
+**渲染技术特性**:
+- **URP渲染特性**: 基于ScriptableRendererFeature的自定义渲染
+- **后处理效果**: 在透明物体渲染后执行边缘检测
+- **临时纹理**: 使用临时渲染纹理进行多通道处理
+- **命令缓冲**: 使用CommandBuffer进行GPU指令管理
+
+### 2.6 碰撞检测与粒子系统
+
+#### 2.6.1 Avatar碰撞处理 (Avatar.cs)
 ```csharp
 private void OnTriggerEnter(Collider other) {
     if(deathCountdown < 0f){
@@ -168,14 +338,44 @@ private void OnTriggerEnter(Collider other) {
         burst.Emit(burst.main.maxParticles); // 爆炸粒子
         var main = burst.main;
         deathCountdown = main.startLifetime.constant;
+        
+        // 触发音效
+        AudioManager.Instance.PlaySFX(explosionSFX);
     }
 }
 ```
 
 **技术实现**:
 - **触发器检测**: 使用Unity物理系统的Trigger机制
-- **粒子系统**: 集成Unity ParticleSystem组件
+- **粒子系统**: 集成Unity ParticleSystem组件，支持GPU粒子
 - **状态管理**: 基于时间的死亡状态控制
+- **视觉反馈**: 粒子爆炸效果与音效同步
+
+### 2.8 数据持久化系统 (UserRepository.cs)
+```csharp
+public class UserRepository {
+    public static UserRepository Instance = new UserRepository();
+    public static Action<int> OnBestScoreChanged;
+    
+    public int BestScore {
+        get {
+            return PlayerPrefs.GetInt("Best", 0);
+        }
+        set {
+            PlayerPrefs.SetInt("Best", value);
+            PlayerPrefs.Save();
+            OnBestScoreChanged?.Invoke(value);
+        }
+    }
+}
+```
+
+**数据管理特性**:
+- **单例模式**: 全局唯一的数据访问点
+- **PlayerPrefs**: 跨平台的本地存储解决方案
+- **事件通知**: 数据变更时自动通知UI更新
+- **即时保存**: 数据修改后立即调用PlayerPrefs.Save()
+
 
 ## 3. 性能优化技术
 
@@ -191,8 +391,9 @@ private void OnTriggerEnter(Collider other) {
 - **及时清理**: 主动销毁过期的游戏对象
 
 ### 3.3 计算优化
-- **Job System**: 多线程并行计算
-- **Burst编译器**: SIMD指令优化
+- **Job System**: 多线程并行网格生成
+- **NativeArray**: 非托管内存数组避免GC
+- **数学优化**: Unity.Mathematics库进行向量运算
 - **缓存友好**: 数据结构设计考虑CPU缓存
 
 ## 4. 平台适配技术
@@ -265,25 +466,10 @@ namespace xb.input {
 
 ## 8. 技术债务与改进方向
 
-### 8.1 当前限制
-- **音效系统**: 尚未实现完整的音效管理
-- **存档系统**: 缺少进度和设置保存
-- **网络功能**: 无在线排行榜支持
-
-### 8.2 优化方向
-- **GPU实例化**: 大量相似对象的渲染优化
-- **异步加载**: 资源流式加载系统
-- **数据驱动**: 更多配置数据外部化
-- **AI系统**: 智能难度调节机制
-
-## 9. 部署与构建
-
-### 9.1 构建配置
-- **多平台构建**: 统一的构建流水线
-- **资源压缩**: 纹理和音频压缩策略
-- **代码混淆**: 发布版本的代码保护
-
-### 9.2 版本管理
-- **Git工作流**: 基于功能分支的开发流程
-- **资源版本控制**: LFS管理大型资源文件
-- **自动化测试**: 单元测试和集成测试框架
+### 8.1 已实现的核心技术
+- **高性能管道生成**: Unity Job System并行网格生成
+- **音频系统**: 渐变音效和独立音源管理
+- **数据持久化**: PlayerPrefs本地存储和事件通知
+- **渲染优化**: URP + 边缘检测渲染特性
+- **UI系统**: 事件驱动的响应式UI更新
+- **障碍物生成**: 基于策略模式的可扩展生成器

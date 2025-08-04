@@ -6,14 +6,9 @@ using UnityEngine.UI;
 using xb.pipe;
 
 public class MainUI : MonoBehaviour {
-    [SerializeField]
-    private GameObject gameOverDialog;
-
-    [SerializeField]
-    private Button newGameButton;
-
-    [SerializeField]
-    private AudioManager audioManager;
+    [SerializeField] private GameObject gameOverDialog;
+    [SerializeField] private Button newGameButton;
+    [SerializeField] private AudioManager audioManager;
 
     private void Awake() {
 

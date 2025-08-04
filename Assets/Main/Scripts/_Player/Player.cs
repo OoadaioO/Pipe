@@ -28,7 +28,7 @@ namespace xb.pipe {
 
         private Transform world, rotater;
         private float worldRotation, avatarRotation;
-        
+
 
 
         private void Start() {
@@ -88,6 +88,12 @@ namespace xb.pipe {
         }
 
         public void Die() {
+
+            int best = (int)distanceTraveled;
+            if (best > UserRepository.Instance.BestScore) {
+                UserRepository.Instance.BestScore = best;
+            }
+
 
             gameObject.SetActive(false);
             OnDie?.Invoke();

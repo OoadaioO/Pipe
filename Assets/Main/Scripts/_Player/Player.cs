@@ -7,6 +7,7 @@ namespace xb.pipe {
     public class Player : SingletonMonobehaviour<Player> {
 
         public static Action OnDie;
+        public static Action<float> OnDistanceTraveledChange;
 
         public PipeSystem pipeSystem;
 
@@ -27,8 +28,7 @@ namespace xb.pipe {
 
         private Transform world, rotater;
         private float worldRotation, avatarRotation;
-
-
+        
 
 
         private void Start() {
@@ -45,6 +45,8 @@ namespace xb.pipe {
 
             float delta = velocify * Time.deltaTime;
             distanceTraveled += delta;
+            NotifyDistanceTraveled();
+
             systemRotation += delta * deltaToRotation;
 
             if (systemRotation >= currentPipe.CurveAngle) {
@@ -94,15 +96,20 @@ namespace xb.pipe {
 
         public void StartGame(int mode) {
             distanceTraveled = 0f;
+            NotifyDistanceTraveled();
+
             avatarRotation = 0f;
             systemRotation = 0f;
             worldRotation = 0f;
             velocify = startVelocity;
             acceleration = accelerations[mode];
-
             currentPipe = pipeSystem.SetupFirstPipe();
             SetupCurrentPipe();
             gameObject.SetActive(true);
+        }
+
+        private void NotifyDistanceTraveled() {
+            OnDistanceTraveledChange?.Invoke(distanceTraveled);
         }
 
 #if UNITY_EDITOR
